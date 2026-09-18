@@ -1,0 +1,128 @@
+@page "/mentor/requests"
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject ApplicationDbContext Db
+@inject BookingService Bookings
+@inject CurrentMentorService CurrentMentor
+
+<PageTitle>Mentor requests</PageTitle>
+
+<h1>Pending requests</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else
+{
+    <p class="text-muted">Confirm to generate a video link and notify the student, or reject with a reason.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+
+    <EmailPreview Body="@_lastEmailBody" Title="@_lastEmailTitle" />
+
+    @if (_pending.Count == 0)
+    {
+        <div class="alert alert-secondary">You have no pending requests.</div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var b in _pending)
+            {
+                <div class="col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body">
+                            <h5 class="card-title">@b.Topic.Name — @b.StartUtc.ToString("ddd MMM dd, HH:mm")</h5>
+                            <p class="mb-1"><strong>@b.StudentName</strong> (@b.StudentEmail)</p>
+                            <p class="card-text">@b.Message</p>
+
+                            @if (_rejectingId == b.Id)
+                            {
+                                <div class="mb-2">
+                                    <label class="form-label">Reason for rejection</label>
+                                    <textarea class="form-control" rows="2" @bind="_rejectReason"></textarea>
+                                </div>
+                                <button class="btn btn-danger btn-sm" @onclick="() => ConfirmReject(b.Id)">Send rejection</button>
+                                <button class="btn btn-link btn-sm" @onclick="() => _rejectingId = null">Cancel</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-success btn-sm" @onclick="() => Confirm(b.Id)">Confirm</button>
+                                <button class="btn btn-outline-danger btn-sm" @onclick="() => StartReject(b.Id)">Reject</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@code {
+    private Models.Mentor? _mentor;
+    private List<Booking> _pending = new();
+    private int? _rejectingId;
+    private string _rejectReason = string.Empty;
+    private string? _message;
+    private string? _lastEmailBody;
+    private string _lastEmailTitle = "Email notification";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (_mentor is null) return;
+        _pending = await Db.Bookings
+            .Include(b => b.Topic)
+            .Where(b => b.MentorId == _mentor.Id && b.Status == BookingStatus.Pending)
+            .OrderBy(b => b.StartUtc)
+            .ToListAsync();
+    }
+
+    private async Task Confirm(int id)
+    {
+        var result = await Bookings.ConfirmAsync(id);
+        if (result.Success)
+        {
+            _message = "Booking confirmed. A video link was generated and the student was emailed.";
+            _lastEmailBody = result.EmailBody;
+            _lastEmailTitle = "Confirmation email sent to the student";
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await Load();
+    }
+
+    private void StartReject(int id)
+    {
+        _rejectingId = id;
+        _rejectReason = string.Empty;
+    }
+
+    private async Task ConfirmReject(int id)
+    {
+        var result = await Bookings.RejectAsync(id, _rejectReason);
+        if (result.Success)
+        {
+            _message = "Booking rejected. The student was emailed with your reason.";
+            _lastEmailBody = result.EmailBody;
+            _lastEmailTitle = "Rejection email sent to the student";
+            _rejectingId = null;
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await Load();
+    }
+}

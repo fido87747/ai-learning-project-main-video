@@ -1,0 +1,142 @@
+@* Bootstrap-styled modal that shows the details of a booking/request.
+   Rendered only when Booking is not null. No JS interop needed. *@
+
+@if (Booking is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        Request details
+                        <span class="badge @StatusBadgeClass ms-1">@Booking.Status</span>
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">When</dt>
+                        <dd class="col-sm-8">
+                            @Booking.StartUtc.ToString("dddd, MMM dd yyyy")<br />
+                            @Booking.StartUtc.ToString("HH:mm") &ndash; @Booking.EndUtc.ToString("HH:mm")
+                        </dd>
+
+                        <dt class="col-sm-4">Topic</dt>
+                        <dd class="col-sm-8">@Booking.Topic?.Name</dd>
+
+                        <dt class="col-sm-4">Mentor</dt>
+                        <dd class="col-sm-8">@Booking.Mentor?.DisplayName</dd>
+
+                        <dt class="col-sm-4">Student</dt>
+                        <dd class="col-sm-8">@Booking.StudentName</dd>
+
+                        <dt class="col-sm-4">Email</dt>
+                        <dd class="col-sm-8"><a href="mailto:@Booking.StudentEmail">@Booking.StudentEmail</a></dd>
+
+                        <dt class="col-sm-4">Message</dt>
+                        <dd class="col-sm-8" style="white-space:pre-wrap;">@Booking.Message</dd>
+
+                        @if (Booking.Status == BookingStatus.Rejected && !string.IsNullOrWhiteSpace(Booking.RejectionReason))
+                        {
+                            <dt class="col-sm-4 text-danger">Rejection reason</dt>
+                            <dd class="col-sm-8 text-danger" style="white-space:pre-wrap;">@Booking.RejectionReason</dd>
+                        }
+
+                        @if (Booking.Status == BookingStatus.Cancelled && !string.IsNullOrWhiteSpace(Booking.CancellationReason))
+                        {
+                            <dt class="col-sm-4 text-danger">Cancellation reason</dt>
+                            <dd class="col-sm-8 text-danger" style="white-space:pre-wrap;">@Booking.CancellationReason</dd>
+                        }
+
+                        @if (Booking.Status == BookingStatus.Confirmed && !string.IsNullOrWhiteSpace(Booking.MeetingUrl))
+                        {
+                            <dt class="col-sm-4">Video link</dt>
+                            <dd class="col-sm-8"><a href="@Booking.MeetingUrl" target="_blank">Join meeting</a></dd>
+                        }
+
+                        <dt class="col-sm-4">Requested on</dt>
+                        <dd class="col-sm-8">@Booking.CreatedUtc.ToString("yyyy-MM-dd HH:mm")</dd>
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    @if (AllowCancel && CanCancel)
+                    {
+                        @if (_cancelling)
+                        {
+                            <div class="w-100 text-start mb-2">
+                                <label class="form-label text-danger">Reason for cancellation</label>
+                                <textarea class="form-control" rows="2" @bind="_cancelReason"
+                                          placeholder="Let the student know why this session is being cancelled"></textarea>
+                                @if (!string.IsNullOrEmpty(_cancelError))
+                                {
+                                    <div class="text-danger small mt-1">@_cancelError</div>
+                                }
+                            </div>
+                            <button type="button" class="btn btn-danger" @onclick="ConfirmCancel">Confirm cancellation</button>
+                            <button type="button" class="btn btn-link" @onclick="() => { _cancelling = false; _cancelError = null; }">Back</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-outline-danger me-auto" @onclick="() => _cancelling = true">Cancel meeting</button>
+                        }
+                    }
+                    @if (ExtraActions is not null)
+                    {
+                        @ExtraActions(Booking)
+                    }
+                    <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show" @onclick="Close"></div>
+}
+
+@code {
+    [Parameter] public Booking? Booking { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public RenderFragment<Booking>? ExtraActions { get; set; }
+    [Parameter] public bool AllowCancel { get; set; }
+    [Parameter] public EventCallback<string> OnCancel { get; set; }
+
+    private bool _cancelling;
+    private string _cancelReason = string.Empty;
+    private string? _cancelError;
+    private int? _shownBookingId;
+
+    private bool CanCancel => Booking is not null
+        && (Booking.Status == BookingStatus.Pending || Booking.Status == BookingStatus.Confirmed);
+
+    private string StatusBadgeClass => Booking?.Status switch
+    {
+        BookingStatus.Confirmed => "bg-primary",
+        BookingStatus.Pending => "bg-warning text-dark",
+        BookingStatus.Rejected => "bg-danger",
+        BookingStatus.Cancelled => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    protected override void OnParametersSet()
+    {
+        // Reset the inline cancel form only when a different booking is shown.
+        if (Booking?.Id != _shownBookingId)
+        {
+            _shownBookingId = Booking?.Id;
+            _cancelling = false;
+            _cancelReason = string.Empty;
+            _cancelError = null;
+        }
+    }
+
+    private async Task ConfirmCancel()
+    {
+        if (string.IsNullOrWhiteSpace(_cancelReason))
+        {
+            _cancelError = "A cancellation reason is required.";
+            return;
+        }
+        await OnCancel.InvokeAsync(_cancelReason.Trim());
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync();
+}

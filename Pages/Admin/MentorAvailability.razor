@@ -1,0 +1,28 @@
+@page "/admin/mentors/{MentorId:int}/availability"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject MentorManagementService Mgmt
+
+<PageTitle>Edit mentor availability</PageTitle>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">Mentor not found.</div>
+}
+else
+{
+    <h1>Availability — @_mentor.DisplayName</h1>
+    <a class="btn btn-link px-0 mb-2" href="admin/mentors">&laquo; Back to mentors</a>
+
+    <AvailabilityEditor MentorId="_mentor.Id" />
+}
+
+@code {
+    [Parameter] public int MentorId { get; set; }
+
+    private Models.Mentor? _mentor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _mentor = await Mgmt.GetMentorAsync(MentorId);
+    }
+}

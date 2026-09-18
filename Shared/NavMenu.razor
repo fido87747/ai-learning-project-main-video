@@ -1,0 +1,148 @@
+﻿<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Mentor Booking</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="oi oi-home" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="mentors">
+                <span class="oi oi-people" aria-hidden="true"></span> Mentors
+            </NavLink>
+        </div>
+        @* "Book a mentor" is available to signed-in students and mentors. *@
+        <AuthorizeView Roles="Student">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="book">
+                    <span class="oi oi-calendar" aria-hidden="true"></span> Book a mentor
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Mentor">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="book">
+                    <span class="oi oi-calendar" aria-hidden="true"></span> Book a mentor
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/requests">
+                    <span class="oi oi-inbox" aria-hidden="true"></span> Requests
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/schedule">
+                    <span class="oi oi-list-rich" aria-hidden="true"></span> My schedule
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/meetings">
+                    <span class="oi oi-spreadsheet" aria-hidden="true"></span> My meetings
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/availability">
+                    <span class="oi oi-clock" aria-hidden="true"></span> My availability
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/skills">
+                    <span class="oi oi-tags" aria-hidden="true"></span> My skills
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/profile">
+                    <span class="oi oi-person" aria-hidden="true"></span> My profile
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="mentor/videos">
+                    <span class="oi oi-video" aria-hidden="true"></span> My videos
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Admin">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/bookings">
+                    <span class="oi oi-dashboard" aria-hidden="true"></span> All bookings
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/mentors">
+                    <span class="oi oi-people" aria-hidden="true"></span> Manage mentors
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/topics">
+                    <span class="oi oi-tags" aria-hidden="true"></span> Manage topics
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin/reports">
+                    <span class="oi oi-spreadsheet" aria-hidden="true"></span> Reports
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Student">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="my/schedule">
+                    <span class="oi oi-calendar" aria-hidden="true"></span> My schedule
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="my/meetings">
+                    <span class="oi oi-list-rich" aria-hidden="true"></span> My meetings
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <a class="nav-link" href="/Account/ChangePassword">
+                        <span class="oi oi-key" aria-hidden="true"></span> Change password
+                    </a>
+                </div>
+                <div class="nav-item px-3">
+                    <a class="nav-link" href="/Account/Logout">
+                        <span class="oi oi-account-logout" aria-hidden="true"></span> Sign out (@context.User.Identity?.Name)
+                    </a>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <a class="nav-link" href="/Account/Login">
+                        <span class="oi oi-account-login" aria-hidden="true"></span> Sign in
+                    </a>
+                </div>
+                <div class="nav-item px-3">
+                    <a class="nav-link" href="/Account/Register">
+                        <span class="oi oi-person" aria-hidden="true"></span> Create account
+                    </a>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

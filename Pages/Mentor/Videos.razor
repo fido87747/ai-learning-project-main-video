@@ -1,0 +1,201 @@
+@page "/mentor/videos"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject CurrentMentorService CurrentMentor
+@inject MentorProfileService Profiles
+
+<PageTitle>My videos</PageTitle>
+
+<h1>My videos</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else if (!_skills.Any())
+{
+    <div class="alert alert-warning">
+        You need at least one skillset before adding videos.
+        <a href="mentor/skills">Add your skills</a> first.
+    </div>
+}
+else
+{
+    <p class="text-muted">
+        Share public YouTube videos. Each video is tagged with one of your skillsets and
+        appears on your public page, grouped by skillset.
+    </p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger">@_error</div>
+    }
+
+    <div class="card mb-4" style="max-width:640px;">
+        <div class="card-body">
+            <h5 class="card-title">@(_editingId is null ? "Add a video" : "Edit video")</h5>
+
+            <div class="mb-2">
+                <label class="form-label" for="video-url">YouTube URL</label>
+                <input id="video-url" class="form-control" @bind="_form.Url"
+                       placeholder="https://www.youtube.com/watch?v=..." />
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="video-desc">Description</label>
+                <input id="video-desc" class="form-control" maxlength="300" @bind="_form.Description"
+                       placeholder="What is this video about?" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="video-topic">Skillset</label>
+                <select id="video-topic" class="form-select" @bind="_form.TopicId">
+                    <option value="0">-- choose a skillset --</option>
+                    @foreach (var t in _skills)
+                    {
+                        <option value="@t.Id">@t.Name</option>
+                    }
+                </select>
+            </div>
+
+            <button class="btn btn-primary" @onclick="Save">
+                @(_editingId is null ? "Add video" : "Save changes")
+            </button>
+            @if (_editingId is not null)
+            {
+                <button class="btn btn-link" @onclick="CancelEdit">Cancel</button>
+            }
+        </div>
+    </div>
+
+    @if (!_videos.Any())
+    {
+        <p class="text-muted">You haven't added any videos yet.</p>
+    }
+    else
+    {
+        <table class="table align-middle" style="max-width:820px;">
+            <thead>
+                <tr>
+                    <th>Skillset</th>
+                    <th>Description</th>
+                    <th>Video</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in _videos)
+                {
+                    <tr>
+                        <td><span class="badge bg-secondary">@v.Topic.Name</span></td>
+                        <td>@v.Description</td>
+                        <td>
+                            <a href="@YouTubeHelper.WatchUrl(v.YouTubeId)" target="_blank" rel="noopener">
+                                Watch
+                            </a>
+                        </td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => BeginEdit(v)">Edit</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(v.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private Models.Mentor? _mentor;
+    private List<Topic> _skills = new();
+    private List<MentorVideo> _videos = new();
+    private VideoForm _form = new();
+    private int? _editingId;
+    private string? _message;
+    private string? _error;
+
+    private class VideoForm
+    {
+        public string? Url { get; set; }
+        public string? Description { get; set; }
+        public int TopicId { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+        if (_mentor is not null)
+        {
+            _skills = _mentor.MentorTopics.Select(mt => mt.Topic).OrderBy(t => t.Name).ToList();
+            await LoadVideos();
+        }
+    }
+
+    private async Task LoadVideos()
+    {
+        if (_mentor is not null)
+        {
+            _videos = await Profiles.GetVideosAsync(_mentor.Id);
+        }
+    }
+
+    private void BeginEdit(MentorVideo v)
+    {
+        _editingId = v.Id;
+        _form = new VideoForm { Url = v.Url, Description = v.Description, TopicId = v.TopicId };
+        _message = _error = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _form = new VideoForm();
+        _message = _error = null;
+    }
+
+    private async Task Save()
+    {
+        if (_mentor is null)
+        {
+            return;
+        }
+
+        _message = _error = null;
+
+        var result = _editingId is null
+            ? await Profiles.AddVideoAsync(_mentor.Id, _form.Url, _form.Description, _form.TopicId)
+            : await Profiles.UpdateVideoAsync(_editingId.Value, _mentor.Id, _form.Url, _form.Description, _form.TopicId);
+
+        if (result.Success)
+        {
+            _message = _editingId is null ? "Video added." : "Video updated.";
+            _editingId = null;
+            _form = new VideoForm();
+            await LoadVideos();
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+
+    private async Task Delete(int videoId)
+    {
+        _message = _error = null;
+        var result = await Profiles.DeleteVideoAsync(videoId, _mentor!.Id);
+        if (result.Success)
+        {
+            _message = "Video deleted.";
+            if (_editingId == videoId)
+            {
+                CancelEdit();
+            }
+            await LoadVideos();
+        }
+        else
+        {
+            _error = result.Error;
+        }
+    }
+}

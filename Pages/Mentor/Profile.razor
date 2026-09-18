@@ -1,0 +1,129 @@
+@page "/mentor/profile"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject CurrentMentorService CurrentMentor
+@inject CurrentUserService CurrentUser
+@inject MentorProfileService Profiles
+
+<PageTitle>My profile</PageTitle>
+
+<h1>My profile</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger">@_error</div>
+    }
+
+    <div class="row g-4" style="max-width:760px;">
+        <div class="col-md-4 text-center">
+            <img src="@PhotoUrl" alt="Profile picture" class="img-thumbnail rounded-circle mb-2"
+                 style="width:180px;height:180px;object-fit:cover;"
+                 onerror="this.onerror=null;this.src='/img/default-avatar.svg';" />
+            <div>
+                <label class="btn btn-outline-primary btn-sm mt-2 mb-0">
+                    @(_uploading ? "Uploading…" : "Upload picture")
+                    <InputFile OnChange="OnFileSelected" accept="image/png,image/jpeg,image/webp"
+                               disabled="@_uploading" style="display:none;" />
+                </label>
+                <div class="form-text">PNG, JPEG or WebP, up to 2 MB.</div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <h4 class="mb-1">@_mentor.DisplayName</h4>
+            <p class="text-muted mb-2">
+                <span class="oi oi-envelope-closed" aria-hidden="true"></span> @_email
+            </p>
+            @if (!string.IsNullOrWhiteSpace(_mentor.Bio))
+            {
+                <p>@_mentor.Bio</p>
+            }
+
+            <h6 class="mt-3">Skillsets</h6>
+            @if (_mentor.MentorTopics.Any())
+            {
+                <div>
+                    @foreach (var name in _mentor.MentorTopics.Select(mt => mt.Topic.Name).OrderBy(n => n))
+                    {
+                        <span class="badge bg-secondary me-1 mb-1">@name</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted">No skillsets yet. <a href="mentor/skills">Add your skills</a>.</p>
+            }
+
+            <p class="mt-3">
+                <a class="btn btn-link px-0" href="mentor/videos">Manage my videos</a>
+            </p>
+        </div>
+    </div>
+}
+
+@code {
+    private Models.Mentor? _mentor;
+    private string? _email;
+    private string? _message;
+    private string? _error;
+    private bool _uploading;
+    private string _cacheBust = string.Empty;
+
+    private string PhotoUrl => _mentor is null ? string.Empty : $"/mentors/{_mentor.Id}/photo{_cacheBust}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+        var user = await CurrentUser.GetUserAsync();
+        _email = user?.Email;
+
+        if (_mentor is not null && await Profiles.HasProfileImageAsync(_mentor.Id))
+        {
+            _cacheBust = $"?t={DateTime.UtcNow.Ticks}";
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _message = _error = null;
+        if (_mentor is null)
+        {
+            return;
+        }
+
+        _uploading = true;
+        try
+        {
+            var file = e.File;
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(MentorProfileService.MaxImageBytes).CopyToAsync(ms);
+
+            var result = await Profiles.SetProfileImageAsync(_mentor.Id, ms.ToArray(), file.ContentType);
+            if (result.Success)
+            {
+                _message = "Profile picture updated.";
+                _cacheBust = $"?t={DateTime.UtcNow.Ticks}";
+            }
+            else
+            {
+                _error = result.Error;
+            }
+        }
+        catch (IOException)
+        {
+            _error = "Image must be 2 MB or smaller.";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+}

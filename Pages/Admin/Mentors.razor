@@ -1,0 +1,219 @@
+@page "/admin/mentors"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject MentorManagementService Mgmt
+
+<PageTitle>Manage mentors</PageTitle>
+
+<h1>Manage mentors</h1>
+<p class="text-muted">Create mentor accounts, assign their skills (topics), and edit their profiles.</p>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert alert-info">@_message</div>
+}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Add a mentor</h5>
+        <EditForm Model="_form" OnValidSubmit="Create">
+            <DataAnnotationsValidator />
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label">Display name</label>
+                    <InputText class="form-control" @bind-Value="_form.DisplayName" />
+                    <ValidationMessage For="() => _form.DisplayName" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Login email</label>
+                    <InputText class="form-control" @bind-Value="_form.Email" />
+                    <ValidationMessage For="() => _form.Email" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Temporary password</label>
+                    <InputText type="password" class="form-control" @bind-Value="_form.Password" />
+                    <ValidationMessage For="() => _form.Password" />
+                    <div class="form-text">Min 8 chars, incl. a non-alphanumeric character.</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Bio</label>
+                    <InputTextArea class="form-control" rows="2" @bind-Value="_form.Bio" />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Skills (topics)</label>
+                    <div class="d-flex flex-wrap gap-3">
+                        @foreach (var t in _topics)
+                        {
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="new-@t.Id"
+                                       checked="@_form.TopicIds.Contains(t.Id)"
+                                       @onchange="e => ToggleNew(t.Id, (bool)e.Value!)" />
+                                <label class="form-check-label" for="new-@t.Id">@t.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Create mentor</button>
+        </EditForm>
+    </div>
+</div>
+
+<h4>Existing mentors</h4>
+<div class="row g-3">
+    @foreach (var m in _mentors)
+    {
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    @if (_editingId == m.Id)
+                    {
+                        <div class="mb-2">
+                            <label class="form-label">Display name</label>
+                            <input class="form-control" @bind="_editName" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Bio</label>
+                            <textarea class="form-control" rows="2" @bind="_editBio"></textarea>
+                        </div>
+                        <label class="form-label">Skills</label>
+                        <div class="d-flex flex-wrap gap-3 mb-2">
+                            @foreach (var t in _topics)
+                            {
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input" id="edit-@m.Id-@t.Id"
+                                           checked="@_editTopicIds.Contains(t.Id)"
+                                           @onchange="e => ToggleEdit(t.Id, (bool)e.Value!)" />
+                                    <label class="form-check-label" for="edit-@m.Id-@t.Id">@t.Name</label>
+                                </div>
+                            }
+                        </div>
+                        <button class="btn btn-sm btn-primary" @onclick="() => SaveEdit(m.Id)">Save</button>
+                        <button class="btn btn-sm btn-link" @onclick="() => _editingId = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <h5 class="mb-1">@m.DisplayName</h5>
+                        <p class="small text-muted mb-2">@m.Bio</p>
+                        <p class="mb-2">
+                            @if (m.MentorTopics.Count == 0)
+                            {
+                                <span class="text-muted">No skills assigned</span>
+                            }
+                            else
+                            {
+                                @foreach (var mt in m.MentorTopics)
+                                {
+                                    <span class="badge bg-secondary me-1">@mt.Topic.Name</span>
+                                }
+                            }
+                        </p>
+                        <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(m)">Edit</button>
+                        <a class="btn btn-sm btn-outline-secondary" href="admin/mentors/@m.Id/availability">Availability</a>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    @if (_mentors.Count == 0)
+    {
+        <p class="text-muted">No mentors yet.</p>
+    }
+</div>
+
+@code {
+    private List<Topic> _topics = new();
+    private List<Models.Mentor> _mentors = new();
+    private readonly MentorForm _form = new();
+    private string? _message;
+
+    private int? _editingId;
+    private string _editName = string.Empty;
+    private string? _editBio;
+    private HashSet<int> _editTopicIds = new();
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _topics = await Mgmt.GetTopicsAsync();
+        _mentors = await Mgmt.GetMentorsAsync();
+    }
+
+    private void ToggleNew(int topicId, bool on)
+    {
+        if (on) _form.TopicIds.Add(topicId);
+        else _form.TopicIds.Remove(topicId);
+    }
+
+    private void ToggleEdit(int topicId, bool on)
+    {
+        if (on) _editTopicIds.Add(topicId);
+        else _editTopicIds.Remove(topicId);
+    }
+
+    private async Task Create()
+    {
+        var result = await Mgmt.CreateMentorAsync(
+            _form.Email, _form.Password, _form.DisplayName, _form.Bio, _form.TopicIds);
+
+        if (result.Success)
+        {
+            _message = $"Mentor '{_form.DisplayName}' created.";
+            _form.Reset();
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await Load();
+    }
+
+    private void StartEdit(Models.Mentor m)
+    {
+        _editingId = m.Id;
+        _editName = m.DisplayName;
+        _editBio = m.Bio;
+        _editTopicIds = m.MentorTopics.Select(mt => mt.TopicId).ToHashSet();
+    }
+
+    private async Task SaveEdit(int mentorId)
+    {
+        var profile = await Mgmt.UpdateMentorProfileAsync(mentorId, _editName, _editBio);
+        if (!profile.Success)
+        {
+            _message = profile.Error;
+            return;
+        }
+
+        await Mgmt.SetMentorTopicsAsync(mentorId, _editTopicIds);
+        _message = "Mentor updated.";
+        _editingId = null;
+        await Load();
+    }
+
+    private class MentorForm
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(150)]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 8)]
+        public string Password { get; set; } = string.Empty;
+
+        public string? Bio { get; set; }
+
+        public HashSet<int> TopicIds { get; set; } = new();
+
+        public void Reset()
+        {
+            DisplayName = Email = Password = string.Empty;
+            Bio = null;
+            TopicIds = new();
+        }
+    }
+}

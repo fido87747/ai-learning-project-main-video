@@ -1,0 +1,55 @@
+@page
+@model MentorBooking.Pages.Account.LoginModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in - Mentor Booking</title>
+    <link rel="stylesheet" href="~/css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body>
+    <div class="container" style="max-width:420px;margin-top:80px;">
+        <h2 class="mb-3">Sign in</h2>
+        <p class="text-muted">For mentors, admins, and registered students. Students can also book without an account.</p>
+        <form method="post">
+            <div asp-validation-summary="All" class="text-danger mb-2"></div>
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input asp-for="Input.Email" class="form-control" autocomplete="username" />
+                <span asp-validation-for="Input.Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" />
+                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Sign in</button>
+        </form>
+        <p class="mt-2 mb-0"><a href="/Account/ForgotPassword">Forgot your password?</a></p>
+        <hr />
+        <p class="small text-muted mb-1">Demo accounts (prototype):</p>
+        <table class="table table-sm small">
+            <thead>
+                <tr><th>Role</th><th>Email</th><th>Password</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var acct in Model.DemoAccounts)
+                {
+                    <tr>
+                        <td>@acct.Role</td>
+                        <td>@acct.Email</td>
+                        <td>@(string.IsNullOrEmpty(acct.PasswordHint) ? "(set by admin)" : acct.PasswordHint)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <a class="btn btn-link mt-2" href="/Account/Register">Create a student account</a>
+        <a class="btn btn-link mt-2" href="/">Back to home</a>
+    </div>
+</body>
+</html>

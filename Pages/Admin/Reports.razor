@@ -1,0 +1,304 @@
+@page "/admin/reports"
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject ApplicationDbContext Db
+@inject BookingService Bookings
+
+<PageTitle>Reports</PageTitle>
+
+<h1>Reports</h1>
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Mentors ? "active" : "")" @onclick="() => _tab = Tab.Mentors">
+            Mentors
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_tab == Tab.Upcoming ? "active" : "")" @onclick="() => _tab = Tab.Upcoming">
+            Mentors &amp; upcoming meetings
+        </button>
+    </li>
+</ul>
+
+@if (_tab == Tab.Mentors)
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <p class="text-muted mb-0">All mentors with their skills and meeting counts.</p>
+        <a class="btn btn-sm btn-outline-secondary" href="@MentorsCsvUrl" target="_blank">Download CSV</a>
+    </div>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th role="button" @onclick="() => SortMentors(MentorSort.Name)">
+                    Mentor @SortIcon(_mentorSort == MentorSort.Name)
+                </th>
+                <th>Login email</th>
+                <th>Skills</th>
+                <th role="button" @onclick="() => SortMentors(MentorSort.Upcoming)">
+                    Upcoming meetings @SortIcon(_mentorSort == MentorSort.Upcoming)
+                </th>
+                <th role="button" @onclick="() => SortMentors(MentorSort.Total)">
+                    Total bookings @SortIcon(_mentorSort == MentorSort.Total)
+                </th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in SortedMentorRows)
+            {
+                <tr>
+                    <td>@row.DisplayName</td>
+                    <td>@row.Email</td>
+                    <td>
+                        @if (row.Skills.Count == 0)
+                        {
+                            <span class="text-muted">—</span>
+                        }
+                        else
+                        {
+                            @foreach (var s in row.Skills)
+                            {
+                                <span class="badge bg-secondary me-1">@s</span>
+                            }
+                        }
+                    </td>
+                    <td>@row.UpcomingCount</td>
+                    <td>@row.TotalCount</td>
+                </tr>
+            }
+            @if (_mentorRows.Count == 0)
+            {
+                <tr><td colspan="5" class="text-muted">No mentors.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <p class="text-muted mb-0">Upcoming meetings (pending &amp; confirmed, from now onward).</p>
+        <a class="btn btn-sm btn-outline-secondary" href="@MeetingsCsvUrl" target="_blank">Download CSV</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+
+    <EmailPreview Body="@_lastEmailBody" Title="Cancellation email sent to the student" />
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th role="button" @onclick="() => SortMeetings(MeetingSort.Mentor)">
+                    Mentor @SortIcon(_meetingSort == MeetingSort.Mentor)
+                </th>
+                <th role="button" @onclick="() => SortMeetings(MeetingSort.Date)">
+                    Date / time @SortIcon(_meetingSort == MeetingSort.Date)
+                </th>
+                <th role="button" @onclick="() => SortMeetings(MeetingSort.Student)">
+                    Regular user @SortIcon(_meetingSort == MeetingSort.Student)
+                </th>
+                <th>Topic</th>
+                <th>Status</th>
+                <th>Meeting</th>
+                <th style="width:260px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in SortedMeetingRows)
+            {
+                <tr>
+                    <td>@m.MentorName</td>
+                    <td>@m.StartUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@m.StudentName<br /><span class="small text-muted">@m.StudentEmail</span></td>
+                    <td>@m.TopicName</td>
+                    <td><span class="badge bg-secondary">@m.Status</span></td>
+                    <td>
+                        @if (m.MeetingUrl is not null)
+                        {
+                            <a href="@m.MeetingUrl" target="_blank">Join</a>
+                        }
+                    </td>
+                    <td>
+                        @if (_cancellingId == m.BookingId)
+                        {
+                            <textarea class="form-control form-control-sm mb-1" rows="2" @bind="_cancelReason"
+                                      placeholder="Reason for cancellation"></textarea>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmCancel(m.BookingId)">Confirm</button>
+                            <button class="btn btn-sm btn-link" @onclick="() => _cancellingId = null">Back</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => StartCancel(m.BookingId)">Cancel meeting</button>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_meetingRows.Count == 0)
+            {
+                <tr><td colspan="7" class="text-muted">No upcoming meetings.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private enum Tab { Mentors, Upcoming }
+    private enum MentorSort { Name, Upcoming, Total }
+    private enum MeetingSort { Mentor, Date, Student }
+
+    private Tab _tab = Tab.Mentors;
+
+    private MentorSort _mentorSort = MentorSort.Name;
+    private bool _mentorAsc = true;
+
+    private MeetingSort _meetingSort = MeetingSort.Date;
+    private bool _meetingAsc = true;
+
+    private List<MentorRow> _mentorRows = new();
+    private List<MeetingRow> _meetingRows = new();
+
+    private int? _cancellingId;
+    private string _cancelReason = string.Empty;
+    private string? _message;
+    private string? _lastEmailBody;
+
+    private const string MentorsCsvUrl = "/reports/mentors.csv";
+    private const string MeetingsCsvUrl = "/reports/upcoming.csv";
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        var nowUtc = DateTime.UtcNow;
+
+        var mentors = await Db.Mentors
+            .Include(m => m.MentorTopics).ThenInclude(mt => mt.Topic)
+            .ToListAsync();
+
+        var users = await Db.Users.ToDictionaryAsync(u => u.Id, u => u.Email);
+
+        var bookings = await Db.Bookings
+            .Include(b => b.Topic)
+            .Include(b => b.Mentor)
+            .ToListAsync();
+
+        _mentorRows = mentors.Select(m => new MentorRow
+        {
+            MentorId = m.Id,
+            DisplayName = m.DisplayName,
+            Email = m.UserId is not null && users.TryGetValue(m.UserId, out var e) ? e : null,
+            Skills = m.MentorTopics.Select(mt => mt.Topic.Name).OrderBy(n => n).ToList(),
+            UpcomingCount = bookings.Count(b => b.MentorId == m.Id
+                && b.StartUtc >= nowUtc
+                && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed)),
+            TotalCount = bookings.Count(b => b.MentorId == m.Id)
+        }).ToList();
+
+        _meetingRows = bookings
+            .Where(b => b.StartUtc >= nowUtc
+                && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed))
+            .Select(b => new MeetingRow
+            {
+                BookingId = b.Id,
+                MentorName = b.Mentor.DisplayName,
+                StartUtc = b.StartUtc,
+                StudentName = b.StudentName,
+                StudentEmail = b.StudentEmail,
+                TopicName = b.Topic.Name,
+                Status = b.Status.ToString(),
+                MeetingUrl = b.MeetingUrl
+            }).ToList();
+    }
+
+    private void StartCancel(int bookingId)
+    {
+        _cancellingId = bookingId;
+        _cancelReason = string.Empty;
+    }
+
+    private async Task ConfirmCancel(int bookingId)
+    {
+        var result = await Bookings.CancelAsync(bookingId, _cancelReason);
+        if (result.Success)
+        {
+            _message = "Meeting cancelled. The student was emailed with the reason.";
+            _lastEmailBody = result.EmailBody;
+            _cancellingId = null;
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await LoadAsync();
+    }
+
+    private IEnumerable<MentorRow> SortedMentorRows
+    {
+        get
+        {
+            IEnumerable<MentorRow> q = _mentorSort switch
+            {
+                MentorSort.Upcoming => _mentorRows.OrderBy(r => r.UpcomingCount),
+                MentorSort.Total => _mentorRows.OrderBy(r => r.TotalCount),
+                _ => _mentorRows.OrderBy(r => r.DisplayName)
+            };
+            return _mentorAsc ? q : q.Reverse();
+        }
+    }
+
+    private IEnumerable<MeetingRow> SortedMeetingRows
+    {
+        get
+        {
+            IEnumerable<MeetingRow> q = _meetingSort switch
+            {
+                MeetingSort.Mentor => _meetingRows.OrderBy(r => r.MentorName).ThenBy(r => r.StartUtc),
+                MeetingSort.Student => _meetingRows.OrderBy(r => r.StudentName).ThenBy(r => r.StartUtc),
+                _ => _meetingRows.OrderBy(r => r.StartUtc)
+            };
+            return _meetingAsc ? q : q.Reverse();
+        }
+    }
+
+    private void SortMentors(MentorSort sort)
+    {
+        if (_mentorSort == sort) _mentorAsc = !_mentorAsc;
+        else { _mentorSort = sort; _mentorAsc = true; }
+    }
+
+    private void SortMeetings(MeetingSort sort)
+    {
+        if (_meetingSort == sort) _meetingAsc = !_meetingAsc;
+        else { _meetingSort = sort; _meetingAsc = true; }
+    }
+
+    private static MarkupString SortIcon(bool active)
+    {
+        return active ? (MarkupString)"<span class=\"text-muted\">&#8645;</span>" : (MarkupString)"";
+    }
+
+    private class MentorRow
+    {
+        public int MentorId { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public List<string> Skills { get; set; } = new();
+        public int UpcomingCount { get; set; }
+        public int TotalCount { get; set; }
+    }
+
+    private class MeetingRow
+    {
+        public int BookingId { get; set; }
+        public string MentorName { get; set; } = string.Empty;
+        public DateTime StartUtc { get; set; }
+        public string StudentName { get; set; } = string.Empty;
+        public string StudentEmail { get; set; } = string.Empty;
+        public string TopicName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? MeetingUrl { get; set; }
+    }
+}

@@ -1,0 +1,188 @@
+@page "/my/meetings"
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Student")]
+@inject ApplicationDbContext Db
+@inject CurrentUserService CurrentUser
+@inject BookingService Bookings
+
+<PageTitle>My meetings</PageTitle>
+
+<h1>My upcoming meetings</h1>
+
+@if (_email is null)
+{
+    <div class="alert alert-warning">No email is linked to your account.</div>
+}
+else
+{
+    <p class="text-muted">Upcoming pending &amp; confirmed sessions, from now onward.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th role="button" @onclick="() => Sort(MeetingSort.Date)">
+                    Date / time @SortIcon(_sort == MeetingSort.Date)
+                </th>
+                <th role="button" @onclick="() => Sort(MeetingSort.Mentor)">
+                    Mentor @SortIcon(_sort == MeetingSort.Mentor)
+                </th>
+                <th>Topic</th>
+                <th>Status</th>
+                <th>Meeting</th>
+                <th style="width:260px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in SortedRows)
+            {
+                <tr>
+                    <td>@m.StartUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@m.MentorName</td>
+                    <td>@m.TopicName</td>
+                    <td><span class="badge bg-secondary">@m.Status</span></td>
+                    <td>
+                        @if (m.MeetingUrl is not null)
+                        {
+                            <a href="@m.MeetingUrl" target="_blank">Join</a>
+                        }
+                    </td>
+                    <td>
+                        @if (_cancellingId == m.BookingId)
+                        {
+                            <textarea class="form-control form-control-sm mb-1" rows="2" @bind="_cancelReason"
+                                      placeholder="Reason for cancellation"></textarea>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmCancel(m.BookingId)">Confirm</button>
+                            <button class="btn btn-sm btn-link" @onclick="() => _cancellingId = null">Back</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => StartCancel(m.BookingId)">Cancel meeting</button>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_rows.Count == 0)
+            {
+                <tr><td colspan="6" class="text-muted">You have no upcoming meetings.</td></tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private enum MeetingSort { Date, Mentor }
+
+    private string? _email;
+    private List<MeetingRow> _rows = new();
+    private MeetingSort _sort = MeetingSort.Date;
+    private bool _asc = true;
+
+    private int? _cancellingId;
+    private string _cancelReason = string.Empty;
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUser.GetUserAsync();
+        _email = user?.Email;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_email is null) return;
+        var nowUtc = DateTime.UtcNow;
+
+        var bookings = await Db.Bookings
+            .Include(b => b.Topic)
+            .Include(b => b.Mentor)
+            .Where(b => b.StudentEmail == _email
+                        && b.StartUtc >= nowUtc
+                        && (b.Status == BookingStatus.Pending || b.Status == BookingStatus.Confirmed))
+            .ToListAsync();
+
+        _rows = bookings.Select(b => new MeetingRow
+        {
+            BookingId = b.Id,
+            MentorName = b.Mentor.DisplayName,
+            StartUtc = b.StartUtc,
+            TopicName = b.Topic.Name,
+            Status = b.Status.ToString(),
+            MeetingUrl = b.MeetingUrl
+        }).ToList();
+    }
+
+    private void StartCancel(int bookingId)
+    {
+        _cancellingId = bookingId;
+        _cancelReason = string.Empty;
+    }
+
+    private async Task ConfirmCancel(int bookingId)
+    {
+        if (string.IsNullOrWhiteSpace(_cancelReason))
+        {
+            _message = "A cancellation reason is required.";
+            return;
+        }
+
+        // Ownership guard: only cancel a booking that belongs to this student.
+        var owned = _rows.Any(r => r.BookingId == bookingId);
+        if (!owned)
+        {
+            _message = "You can only cancel your own bookings.";
+            return;
+        }
+
+        var result = await Bookings.CancelAsync(bookingId, _cancelReason);
+        if (result.Success)
+        {
+            _message = "Meeting cancelled.";
+            _cancellingId = null;
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await LoadAsync();
+    }
+
+    private IEnumerable<MeetingRow> SortedRows
+    {
+        get
+        {
+            IEnumerable<MeetingRow> q = _sort switch
+            {
+                MeetingSort.Mentor => _rows.OrderBy(r => r.MentorName).ThenBy(r => r.StartUtc),
+                _ => _rows.OrderBy(r => r.StartUtc)
+            };
+            return _asc ? q : q.Reverse();
+        }
+    }
+
+    private void Sort(MeetingSort sort)
+    {
+        if (_sort == sort) _asc = !_asc;
+        else { _sort = sort; _asc = true; }
+    }
+
+    private static MarkupString SortIcon(bool active)
+    {
+        return active ? (MarkupString)"<span class=\"text-muted\">&#8645;</span>" : (MarkupString)"";
+    }
+
+    private class MeetingRow
+    {
+        public int BookingId { get; set; }
+        public string MentorName { get; set; } = string.Empty;
+        public DateTime StartUtc { get; set; }
+        public string TopicName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string? MeetingUrl { get; set; }
+    }
+}

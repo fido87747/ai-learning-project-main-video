@@ -1,0 +1,69 @@
+@page "/mentor/skills"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject MentorManagementService Mgmt
+@inject CurrentMentorService CurrentMentor
+
+<PageTitle>My skills</PageTitle>
+
+<h1>My skills</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else
+{
+    <p class="text-muted">Select the topics you can mentor. Students choose mentors by topic.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+
+    <div class="card" style="max-width:480px;">
+        <div class="card-body">
+            <div class="d-flex flex-column gap-2">
+                @foreach (var t in _topics)
+                {
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="skill-@t.Id"
+                               checked="@_selected.Contains(t.Id)"
+                               @onchange="e => Toggle(t.Id, (bool)e.Value!)" />
+                        <label class="form-check-label" for="skill-@t.Id">@t.Name</label>
+                    </div>
+                }
+            </div>
+            <button class="btn btn-primary mt-3" @onclick="Save">Save skills</button>
+        </div>
+    </div>
+}
+
+@code {
+    private Models.Mentor? _mentor;
+    private List<Topic> _topics = new();
+    private HashSet<int> _selected = new();
+    private string? _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+        _topics = await Mgmt.GetTopicsAsync();
+        if (_mentor is not null)
+        {
+            _selected = _mentor.MentorTopics.Select(mt => mt.TopicId).ToHashSet();
+        }
+    }
+
+    private void Toggle(int topicId, bool on)
+    {
+        if (on) _selected.Add(topicId);
+        else _selected.Remove(topicId);
+    }
+
+    private async Task Save()
+    {
+        if (_mentor is null) return;
+        var result = await Mgmt.SetMentorTopicsAsync(_mentor.Id, _selected);
+        _message = result.Success ? "Your skills were updated." : result.Error;
+    }
+}

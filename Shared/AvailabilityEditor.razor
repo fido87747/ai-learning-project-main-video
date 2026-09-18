@@ -1,0 +1,125 @@
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+
+<p class="text-muted">
+    Define recurring weekly windows. Bookable 1-hour slots are generated from these.
+    Use whole hours.
+</p>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert alert-info">@_message</div>
+}
+
+<table class="table table-sm" style="max-width:640px;">
+    <thead>
+        <tr><th>Day</th><th>Start</th><th>End</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var w in _windows)
+        {
+            <tr>
+                <td>@w.DayOfWeek</td>
+                <td>@w.StartTime.ToString("HH\\:mm")</td>
+                <td>@w.EndTime.ToString("HH\\:mm")</td>
+                <td><button class="btn btn-sm btn-outline-danger" @onclick="() => Remove(w.Id)">Remove</button></td>
+            </tr>
+        }
+        @if (_windows.Count == 0)
+        {
+            <tr><td colspan="4" class="text-muted">No availability defined yet.</td></tr>
+        }
+    </tbody>
+</table>
+
+<div class="card" style="max-width:640px;">
+    <div class="card-body">
+        <h5 class="card-title">Add a window</h5>
+        <div class="row g-2 align-items-end">
+            <div class="col">
+                <label class="form-label">Day</label>
+                <select class="form-select" @bind="_newDay">
+                    @foreach (DayOfWeek d in Enum.GetValues<DayOfWeek>())
+                    {
+                        <option value="@d">@d</option>
+                    }
+                </select>
+            </div>
+            <div class="col">
+                <label class="form-label">Start (hour)</label>
+                <select class="form-select" @bind="_newStartHour">
+                    @for (int h = 0; h < 24; h++)
+                    {
+                        <option value="@h">@h.ToString("00"):00</option>
+                    }
+                </select>
+            </div>
+            <div class="col">
+                <label class="form-label">End (hour)</label>
+                <select class="form-select" @bind="_newEndHour">
+                    @for (int h = 1; h <= 24; h++)
+                    {
+                        <option value="@h">@h.ToString("00"):00</option>
+                    }
+                </select>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" @onclick="Add">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int MentorId { get; set; }
+
+    private List<AvailabilityWindow> _windows = new();
+    private string? _message;
+
+    private DayOfWeek _newDay = DayOfWeek.Monday;
+    private int _newStartHour = 9;
+    private int _newEndHour = 12;
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    private async Task Load()
+    {
+        _windows = await Db.AvailabilityWindows
+            .Where(w => w.MentorId == MentorId)
+            .OrderBy(w => w.DayOfWeek).ThenBy(w => w.StartTime)
+            .ToListAsync();
+    }
+
+    private async Task Add()
+    {
+        if (_newEndHour <= _newStartHour)
+        {
+            _message = "End hour must be after start hour.";
+            return;
+        }
+
+        var endTime = _newEndHour >= 24 ? new TimeOnly(23, 59, 59) : new TimeOnly(_newEndHour, 0);
+
+        Db.AvailabilityWindows.Add(new AvailabilityWindow
+        {
+            MentorId = MentorId,
+            DayOfWeek = _newDay,
+            StartTime = new TimeOnly(_newStartHour, 0),
+            EndTime = endTime
+        });
+        await Db.SaveChangesAsync();
+        _message = "Availability window added.";
+        await Load();
+    }
+
+    private async Task Remove(int id)
+    {
+        var w = await Db.AvailabilityWindows.FindAsync(id);
+        if (w is not null)
+        {
+            Db.AvailabilityWindows.Remove(w);
+            await Db.SaveChangesAsync();
+            await Load();
+        }
+    }
+}

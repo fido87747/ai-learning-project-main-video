@@ -1,0 +1,110 @@
+@page "/mentor/schedule"
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject ApplicationDbContext Db
+@inject CurrentMentorService CurrentMentor
+@inject BookingService Bookings
+
+<PageTitle>My schedule</PageTitle>
+
+<h1>My schedule</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else
+{
+    <p class="text-muted">All bookings on your calendar. Confirmed sessions show the join link. Click a booking for details.</p>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="alert alert-info">@_message</div>
+    }
+
+    <CalendarView @bind-View="_view" @bind-ReferenceDate="_refDate"
+                  Entries="_entries" OnRangeChanged="Load">
+        <EntryTemplate Context="entry">
+            @{
+                var b = (Booking)entry.Data!;
+            }
+            <button type="button" class="slot slot-@entry.State text-start" title="Click for details"
+                    @onclick="() => ShowDetails(b)">
+                @b.StartUtc.ToString("HH:mm") @b.Topic.Name<br />
+                @b.StudentName (@b.Status)
+                @if (b.Status == BookingStatus.Confirmed && b.MeetingUrl is not null)
+                {
+                    <br /><span class="text-decoration-underline">Details</span>
+                }
+            </button>
+        </EntryTemplate>
+    </CalendarView>
+
+    <BookingDetailsModal Booking="_selected" AllowCancel="true"
+                         OnCancel="CancelSelected" OnClose="() => _selected = null" />
+}
+
+@code {
+    private Models.Mentor? _mentor;
+    private List<CalendarEntry> _entries = new();
+    private CalendarViewMode _view = CalendarViewMode.Weekly;
+    private DateOnly _refDate = DateOnly.FromDateTime(DateTime.UtcNow);
+    private Booking? _selected;
+    private string? _message;
+
+    private void ShowDetails(Booking b) => _selected = b;
+
+    private async Task CancelSelected(string reason)
+    {
+        if (_selected is null) return;
+        var result = await Bookings.CancelAsync(_selected.Id, reason);
+        if (result.Success)
+        {
+            _message = "Meeting cancelled. The student was emailed with your reason.";
+            _selected = null;
+        }
+        else
+        {
+            _message = result.Error;
+        }
+        await Load();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        if (_mentor is null) return;
+
+        var start = _view == CalendarViewMode.Daily ? _refDate : StartOfWeek(_refDate);
+        var end = (_view == CalendarViewMode.Daily ? _refDate : StartOfWeek(_refDate).AddDays(6)).AddDays(1);
+        var startUtc = start.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var endUtc = end.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var bookings = await Db.Bookings
+            .Include(b => b.Topic)
+            .Include(b => b.Mentor)
+            .Where(b => b.MentorId == _mentor.Id
+                        && b.Status != BookingStatus.Cancelled
+                        && b.StartUtc >= startUtc && b.StartUtc < endUtc)
+            .ToListAsync();
+
+        _entries = bookings.Select(b => new CalendarEntry
+        {
+            StartUtc = b.StartUtc,
+            EndUtc = b.EndUtc,
+            State = b.Status.ToString().ToLowerInvariant(),
+            Data = b
+        }).ToList();
+    }
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        int diff = ((int)date.DayOfWeek - (int)DayOfWeek.Sunday + 7) % 7;
+        return date.AddDays(-diff);
+    }
+}

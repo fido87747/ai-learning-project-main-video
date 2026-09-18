@@ -1,0 +1,52 @@
+@page "/"
+
+<PageTitle>Mentor Booking</PageTitle>
+
+<div class="px-2">
+    <h1>Find a mentor. Book a session.</h1>
+    <p class="lead">
+        Get 1-on-1 help in Math, Physics, Chemistry, Biology, Cooking and more.
+        Pick a topic, choose a time that works, and meet your mentor over a free video call.
+    </p>
+
+    <div class="row g-3 mt-2">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">1. Choose a topic</h5>
+                    <p class="card-text">Tell us what you need help with and we'll match you with an available mentor.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">2. Pick a time</h5>
+                    <p class="card-text">Browse the mentor's calendar in daily or weekly view and grab a free 1-hour slot.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">3. Meet on video</h5>
+                    <p class="card-text">Once your mentor confirms, you'll get an email with a Jitsi Meet link to join.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <AuthorizeView Roles="Student,Mentor">
+        <Authorized>
+            <a class="btn btn-primary btn-lg mt-4" href="book">Book a mentor</a>
+        </Authorized>
+    </AuthorizeView>
+    <AuthorizeView>
+        <NotAuthorized>
+            <div class="mt-4">
+                <a class="btn btn-primary btn-lg me-2" href="/Account/Register">Create an account</a>
+                <a class="btn btn-outline-primary btn-lg" href="/Account/Login">Sign In</a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>

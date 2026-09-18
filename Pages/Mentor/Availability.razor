@@ -1,0 +1,25 @@
+@page "/mentor/availability"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Mentor")]
+@inject CurrentMentorService CurrentMentor
+
+<PageTitle>My availability</PageTitle>
+
+<h1>My weekly availability</h1>
+
+@if (_mentor is null)
+{
+    <div class="alert alert-warning">No mentor profile is linked to your account.</div>
+}
+else
+{
+    <AvailabilityEditor MentorId="_mentor.Id" />
+}
+
+@code {
+    private Models.Mentor? _mentor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await CurrentMentor.GetAsync();
+    }
+}

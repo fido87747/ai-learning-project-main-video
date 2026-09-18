@@ -1,0 +1,150 @@
+@* Reusable calendar with daily and weekly views. Renders hour rows (0-23) as columns of days.
+   Entries are positioned by their StartUtc. Times are shown in UTC (prototype). *@
+
+<div class="calendar">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="btn-group" role="group">
+            <button class="btn btn-sm @(View == CalendarViewMode.Daily ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => SetView(CalendarViewMode.Daily)">Daily</button>
+            <button class="btn btn-sm @(View == CalendarViewMode.Weekly ? "btn-primary" : "btn-outline-primary")"
+                    @onclick="() => SetView(CalendarViewMode.Weekly)">Weekly</button>
+        </div>
+        <div class="btn-group" role="group">
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Previous">&laquo; Prev</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Today">Today</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="Next">Next &raquo;</button>
+        </div>
+    </div>
+
+    <div class="fw-bold mb-2">@RangeLabel</div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered calendar-grid mb-0">
+            <thead>
+                <tr>
+                    <th style="width:80px;">Time</th>
+                    @foreach (var day in Days)
+                    {
+                        <th class="text-center @(day == _today ? "calendar-today" : "")">
+                            @day.ToString("ddd MM/dd")
+                            @if (day == _today)
+                            {
+                                <span class="badge bg-info text-dark ms-1">Today</span>
+                            }
+                        </th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var hour in Hours)
+                {
+                    <tr>
+                        <td class="text-muted small align-middle">@hour.ToString("00"):00</td>
+                        @foreach (var day in Days)
+                        {
+                            var cellStart = DateTime.SpecifyKind(day.ToDateTime(new TimeOnly(hour, 0)), DateTimeKind.Utc);
+                            var entry = Entries?.FirstOrDefault(e => e.StartUtc == cellStart);
+                            <td class="calendar-cell p-1 @(day == _today ? "calendar-today-cell" : "")">
+                                @if (entry is not null)
+                                {
+                                    @EntryTemplate(entry)
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<CalendarEntry>? Entries { get; set; }
+    [Parameter] public RenderFragment<CalendarEntry> EntryTemplate { get; set; } = default!;
+    [Parameter] public CalendarViewMode View { get; set; } = CalendarViewMode.Weekly;
+    [Parameter] public EventCallback<CalendarViewMode> ViewChanged { get; set; }
+    [Parameter] public DateOnly ReferenceDate { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    [Parameter] public EventCallback<DateOnly> ReferenceDateChanged { get; set; }
+    [Parameter] public EventCallback OnRangeChanged { get; set; }
+    [Parameter] public int StartHour { get; set; } = 7;
+    [Parameter] public int EndHour { get; set; } = 20;
+
+    // Default visible window, automatically expanded to include any entries
+    // that fall outside it so no slot is ever hidden.
+    private IEnumerable<int> Hours
+    {
+        get
+        {
+            int start = StartHour;
+            int end = EndHour;
+            if (Entries is not null)
+            {
+                foreach (var e in Entries)
+                {
+                    var h = e.StartUtc.Hour;
+                    start = Math.Min(start, h);
+                    end = Math.Max(end, h + 1);
+                }
+            }
+            start = Math.Clamp(start, 0, 23);
+            end = Math.Clamp(end, start + 1, 24);
+            return Enumerable.Range(start, end - start);
+        }
+    }
+
+    private readonly DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    private List<DateOnly> Days
+    {
+        get
+        {
+            if (View == CalendarViewMode.Daily)
+            {
+                return new List<DateOnly> { ReferenceDate };
+            }
+            var start = StartOfWeek(ReferenceDate);
+            return Enumerable.Range(0, 7).Select(start.AddDays).ToList();
+        }
+    }
+
+    public DateOnly RangeStart => View == CalendarViewMode.Daily ? ReferenceDate : StartOfWeek(ReferenceDate);
+    public DateOnly RangeEnd => View == CalendarViewMode.Daily ? ReferenceDate : StartOfWeek(ReferenceDate).AddDays(6);
+
+    private string RangeLabel => View == CalendarViewMode.Daily
+        ? ReferenceDate.ToString("dddd, MMM dd, yyyy")
+        : $"{RangeStart:MMM dd} - {RangeEnd:MMM dd, yyyy}";
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        int diff = ((int)date.DayOfWeek - (int)DayOfWeek.Sunday + 7) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private async Task SetView(CalendarViewMode mode)
+    {
+        View = mode;
+        await ViewChanged.InvokeAsync(mode);
+        await OnRangeChanged.InvokeAsync();
+    }
+
+    private async Task Previous()
+    {
+        ReferenceDate = ReferenceDate.AddDays(View == CalendarViewMode.Daily ? -1 : -7);
+        await ReferenceDateChanged.InvokeAsync(ReferenceDate);
+        await OnRangeChanged.InvokeAsync();
+    }
+
+    private async Task Next()
+    {
+        ReferenceDate = ReferenceDate.AddDays(View == CalendarViewMode.Daily ? 1 : 7);
+        await ReferenceDateChanged.InvokeAsync(ReferenceDate);
+        await OnRangeChanged.InvokeAsync();
+    }
+
+    private async Task Today()
+    {
+        ReferenceDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        await ReferenceDateChanged.InvokeAsync(ReferenceDate);
+        await OnRangeChanged.InvokeAsync();
+    }
+}

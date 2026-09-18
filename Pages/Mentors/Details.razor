@@ -1,0 +1,90 @@
+@page "/mentors/{Id:int}"
+@inject MentorProfileService Profiles
+@inject NavigationManager Nav
+
+<PageTitle>@(_mentor?.DisplayName ?? "Mentor")</PageTitle>
+
+@if (_notFound)
+{
+    <div class="alert alert-warning">Mentor not found.</div>
+    <a href="mentors">&larr; Back to mentors</a>
+}
+else if (_mentor is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <p class="mb-3"><a href="mentors">&larr; Back to mentors</a></p>
+
+    <div class="d-flex gap-3 align-items-center mb-4">
+        <img src="@($"/mentors/{_mentor.Id}/photo")" alt="@_mentor.DisplayName"
+             class="rounded-circle flex-shrink-0"
+             style="width:96px;height:96px;object-fit:cover;"
+             onerror="this.onerror=null;this.src='/img/default-avatar.svg';" />
+        <div>
+            <h1 class="mb-1">@_mentor.DisplayName</h1>
+            <div class="mb-1">
+                @foreach (var name in _mentor.MentorTopics.Select(mt => mt.Topic.Name).OrderBy(n => n))
+                {
+                    <span class="badge bg-secondary me-1 mb-1">@name</span>
+                }
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_mentor.Bio))
+            {
+                <p class="text-muted mb-0">@_mentor.Bio</p>
+            }
+        </div>
+    </div>
+
+    <h2 class="h4">Videos</h2>
+    @if (!_videos.Any())
+    {
+        <p class="text-muted">This mentor hasn't shared any videos yet.</p>
+    }
+    else
+    {
+        @foreach (var group in _videos.GroupBy(v => v.Topic.Name).OrderBy(g => g.Key))
+        {
+            <h3 class="h5 mt-4">@group.Key</h3>
+            <div class="row g-3">
+                @foreach (var v in group.OrderBy(x => x.Description))
+                {
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100">
+                            <div class="ratio ratio-16x9">
+                                <iframe src="@YouTubeHelper.EmbedUrl(v.YouTubeId)"
+                                        title="@v.Description"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowfullscreen></iframe>
+                            </div>
+                            <div class="card-body">
+                                <p class="card-text mb-0">@v.Description</p>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Models.Mentor? _mentor;
+    private List<MentorVideo> _videos = new();
+    private bool _notFound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentor = await Profiles.GetPublicMentorAsync(Id);
+        if (_mentor is null)
+        {
+            _notFound = true;
+            return;
+        }
+
+        _videos = await Profiles.GetVideosAsync(Id);
+    }
+}

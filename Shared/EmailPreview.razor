@@ -1,0 +1,21 @@
+@* Shows an email body in a read-only, copyable textarea. Renders nothing when Body is empty. *@
+
+@if (!string.IsNullOrEmpty(Body))
+{
+    <div class="card mb-3" style="max-width:720px;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span>@Title</span>
+            <span class="small text-muted">A copy was emailed to the student</span>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted">Click inside and select the text to copy it.</p>
+            <textarea class="form-control" rows="@Rows" readonly style="font-family:inherit;">@Body</textarea>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Body { get; set; }
+    [Parameter] public string Title { get; set; } = "Email notification";
+    [Parameter] public int Rows { get; set; } = 12;
+}

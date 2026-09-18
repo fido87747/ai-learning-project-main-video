@@ -1,0 +1,140 @@
+@page "/admin/bookings"
+@using Microsoft.EntityFrameworkCore
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@inject ApplicationDbContext Db
+@inject BookingService BookingSvc
+
+<PageTitle>All bookings</PageTitle>
+
+<h1>All bookings</h1>
+<p class="text-muted">Admin view of every mentor's schedule. You can reschedule or remove any booking.</p>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert alert-info">@_message</div>
+}
+
+<div class="row g-2 mb-3 align-items-end" style="max-width:720px;">
+    <div class="col">
+        <label class="form-label">Mentor</label>
+        <select class="form-select" @bind="_mentorFilter" @bind:after="Load">
+            <option value="0">All mentors</option>
+            @foreach (var m in _mentors)
+            {
+                <option value="@m.Id">@m.DisplayName</option>
+            }
+        </select>
+    </div>
+    <div class="col">
+        <label class="form-label">Status</label>
+        <select class="form-select" @bind="_statusFilter" @bind:after="Load">
+            <option value="-1">All statuses</option>
+            @foreach (BookingStatus s in Enum.GetValues<BookingStatus>())
+            {
+                <option value="@((int)s)">@s</option>
+            }
+        </select>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>When</th><th>Mentor</th><th>Topic</th><th>Student</th>
+                <th>Status</th><th>Meeting</th><th style="width:230px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var b in _bookings)
+            {
+                <tr>
+                    <td>@b.StartUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td>@b.Mentor.DisplayName</td>
+                    <td>@b.Topic.Name</td>
+                    <td>@b.StudentName<br /><span class="small text-muted">@b.StudentEmail</span></td>
+                    <td><span class="badge bg-secondary">@b.Status</span></td>
+                    <td>
+                        @if (b.MeetingUrl is not null)
+                        {
+                            <a href="@b.MeetingUrl" target="_blank">Link</a>
+                        }
+                    </td>
+                    <td>
+                        @if (_editingId == b.Id)
+                        {
+                            <input type="datetime-local" class="form-control form-control-sm mb-1" @bind="_newStartLocal" />
+                            <button class="btn btn-sm btn-primary" @onclick="() => SaveReschedule(b.Id)">Save</button>
+                            <button class="btn btn-sm btn-link" @onclick="() => _editingId = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(b)">Reschedule</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => Remove(b.Id)">Remove</button>
+                        }
+                    </td>
+                </tr>
+            }
+            @if (_bookings.Count == 0)
+            {
+                <tr><td colspan="7" class="text-muted">No bookings match the filters.</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private List<Models.Mentor> _mentors = new();
+    private List<Booking> _bookings = new();
+    private int _mentorFilter;
+    private int _statusFilter = -1;
+    private string? _message;
+
+    private int? _editingId;
+    private DateTime _newStartLocal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _mentors = await Db.Mentors.OrderBy(m => m.DisplayName).ToListAsync();
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var query = Db.Bookings.Include(b => b.Mentor).Include(b => b.Topic).AsQueryable();
+
+        if (_mentorFilter > 0)
+        {
+            query = query.Where(b => b.MentorId == _mentorFilter);
+        }
+        if (_statusFilter >= 0)
+        {
+            var status = (BookingStatus)_statusFilter;
+            query = query.Where(b => b.Status == status);
+        }
+
+        _bookings = await query.OrderByDescending(b => b.StartUtc).ToListAsync();
+    }
+
+    private void StartEdit(Booking b)
+    {
+        _editingId = b.Id;
+        _newStartLocal = b.StartUtc; // treat as UTC wall-clock in the picker
+    }
+
+    private async Task SaveReschedule(int id)
+    {
+        var newStartUtc = DateTime.SpecifyKind(_newStartLocal, DateTimeKind.Utc);
+        var result = await BookingSvc.RescheduleAsync(id, newStartUtc);
+        _message = result.Success ? "Booking rescheduled." : result.Error;
+        _editingId = null;
+        await Load();
+    }
+
+    private async Task Remove(int id)
+    {
+        var result = await BookingSvc.DeleteAsync(id);
+        _message = result.Success ? "Booking removed." : result.Error;
+        await Load();
+    }
+}

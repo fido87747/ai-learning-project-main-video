@@ -1,0 +1,368 @@
+@page "/book"
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject BookingService Bookings
+@inject AvailabilityService Availability
+@inject CurrentUserService CurrentUser
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+
+<PageTitle>Book a mentor</PageTitle>
+
+<h1>Book a mentor</h1>
+
+<div class="mb-4">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="badge @(Step >= 1 ? "bg-primary" : "bg-secondary")">1. Topic</span>
+        <span>&rarr;</span>
+        <span class="badge @(Step >= 2 ? "bg-primary" : "bg-secondary")">2. Mentor</span>
+        <span>&rarr;</span>
+        <span class="badge @(Step >= 3 ? "bg-primary" : "bg-secondary")">3. Time</span>
+        <span>&rarr;</span>
+        <span class="badge @(Step >= 4 ? "bg-primary" : "bg-secondary")">4. Details</span>
+    </div>
+</div>
+
+@if (_confirmation is not null)
+{
+    <div class="alert alert-success">
+        <h4 class="alert-heading">Request submitted!</h4>
+        <p>
+            Thanks @_confirmation.StudentName. Your request for
+            <strong>@_confirmation.Topic.Name</strong> with <strong>@_confirmation.Mentor.DisplayName</strong>
+            on <strong>@_confirmation.StartUtc.ToString("dddd, MMM dd yyyy HH:mm")</strong> is now <strong>pending</strong>.
+        </p>
+        <p class="mb-0">The mentor will confirm or decline shortly. You'll receive an email at <strong>@_confirmation.StudentEmail</strong> with the outcome (and a video link if confirmed).</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_confirmationEmailBody))
+    {
+        <div class="card mb-3" style="max-width:720px;">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Confirmation email</span>
+                <span class="small text-muted">A copy was also sent to your inbox</span>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">This is the message we emailed you. Click inside and select the text to copy it.</p>
+                <textarea class="form-control" rows="12" readonly
+                          style="font-family:inherit;">@_confirmationEmailBody</textarea>
+            </div>
+        </div>
+    }
+
+    <button class="btn btn-primary" @onclick="Reset">Make another booking</button>
+    return;
+}
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@* Step 1: Topic *@
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">1. What do you need help with?</h5>
+        <select class="form-select" style="max-width:320px;" @onchange="OnTopicChanged">
+            <option value="">-- Select a topic --</option>
+            @foreach (var t in _topics)
+            {
+                <option value="@t.Id" selected="@(t.Id == _topicId)">@t.Name</option>
+            }
+        </select>
+    </div>
+</div>
+
+@* Step 2: Mentor *@
+@if (Step >= 2)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Choose your mentor</h5>
+            @if (_mentors.Count == 0)
+            {
+                <p class="text-muted">No mentors are currently available for this topic.</p>
+            }
+            else
+            {
+                <p class="text-muted small">We auto-selected the most available mentor, but you can pick anyone below.</p>
+                <div class="row g-2">
+                    @foreach (var m in _mentors)
+                    {
+                        <div class="col-md-6">
+                            <div class="card h-100 @(m.Id == _mentorId ? "border-primary" : "")">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">@m.DisplayName</h6>
+                                            <p class="small text-muted mb-2">@m.Bio</p>
+                                        </div>
+                                        <button class="btn btn-sm @(m.Id == _mentorId ? "btn-primary" : "btn-outline-primary")"
+                                                @onclick="() => SelectMentor(m.Id)">
+                                            @(m.Id == _mentorId ? "Selected" : "Select")
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@* Step 3: Time *@
+@if (Step >= 3 && _mentorId is not null)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">3. Pick a free 1-hour slot</h5>
+            <CalendarView @bind-View="_view" @bind-ReferenceDate="_refDate"
+                          Entries="_entries" OnRangeChanged="LoadSlots">
+                <EntryTemplate Context="entry">
+                    @if (entry.State == "free")
+                    {
+                        <button class="slot slot-free" @onclick="() => SelectSlot(entry.StartUtc)">
+                            @entry.StartUtc.ToString("HH:mm")<br />Available
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="slot slot-taken">Taken</span>
+                    }
+                </EntryTemplate>
+            </CalendarView>
+            @if (_slots.Count == 0)
+            {
+                <p class="text-muted mt-2">No available slots in this range. Try the next week.</p>
+            }
+        </div>
+    </div>
+}
+
+@* Step 4: Details *@
+@if (Step >= 4 && _selectedStartUtc is not null)
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">4. Your details</h5>
+            <p>
+                Booking <strong>@_selectedTopicName</strong> with <strong>@_selectedMentorName</strong>
+                on <strong>@_selectedStartUtc.Value.ToString("dddd, MMM dd yyyy HH:mm")</strong>.
+            </p>
+            <EditForm Model="_form" OnValidSubmit="Submit">
+                <DataAnnotationsValidator />
+                <div class="mb-2" style="max-width:480px;">
+                    <label class="form-label">Your name</label>
+                    <InputText class="form-control" @bind-Value="_form.Name" readonly="@_lockIdentity" />
+                    <ValidationMessage For="() => _form.Name" />
+                </div>
+                <div class="mb-2" style="max-width:480px;">
+                    <label class="form-label">Email address</label>
+                    <InputText class="form-control" @bind-Value="_form.Email" readonly="@_lockIdentity" />
+                    <ValidationMessage For="() => _form.Email" />
+                </div>
+                @if (_lockIdentity)
+                {
+                    <p class="small text-muted">Using your account details so this booking shows up in your calendar and meetings.</p>
+                }
+                <div class="mb-3" style="max-width:640px;">
+                    <label class="form-label">What would you like to learn or clarify?</label>
+                    <InputTextArea class="form-control" rows="4" @bind-Value="_form.Message" />
+                    <ValidationMessage For="() => _form.Message" />
+                </div>
+                <button type="submit" class="btn btn-success" disabled="@_submitting">
+                    @(_submitting ? "Submitting..." : "Submit request")
+                </button>
+                <button type="button" class="btn btn-link" @onclick="() => { _selectedStartUtc = null; }">Change time</button>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Topic> _topics = new();
+    private List<Models.Mentor> _mentors = new();
+    private List<TimeSlot> _slots = new();
+    private List<CalendarEntry> _entries = new();
+
+    private int? _topicId;
+    private int? _mentorId;
+    private DateTime? _selectedStartUtc;
+
+    private string? _selectedMentorName;
+    private string? _selectedTopicName;
+
+    private CalendarViewMode _view = CalendarViewMode.Weekly;
+    private DateOnly _refDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    private readonly BookingForm _form = new();
+    private bool _submitting;
+    private bool _lockIdentity;
+    private string? _error;
+    private Booking? _confirmation;
+    private string? _confirmationEmailBody;
+
+    private int Step
+    {
+        get
+        {
+            if (_selectedStartUtc is not null) return 4;
+            if (_mentorId is not null) return 3;
+            if (_topicId is not null) return 2;
+            return 1;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Booking a mentor is only for regular users; keep mentors/admins out.
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        if (authState.User.IsInRole(Roles.Mentor) || authState.User.IsInRole(Roles.Admin))
+        {
+            Nav.NavigateTo("/", replace: true);
+            return;
+        }
+
+        _topics = await Db.Topics.OrderBy(t => t.Name).ToListAsync();
+        await PrefillIdentityAsync();
+    }
+
+    private async Task PrefillIdentityAsync()
+    {
+        var user = await CurrentUser.GetUserAsync();
+        if (user is not null && !string.IsNullOrEmpty(user.Email))
+        {
+            _form.Name = string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
+            _form.Email = user.Email;
+            _lockIdentity = true;
+        }
+    }
+
+    private async Task OnTopicChanged(ChangeEventArgs e)
+    {
+        _error = null;
+        _mentorId = null;
+        _selectedStartUtc = null;
+        _slots.Clear();
+        _entries.Clear();
+
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            _topicId = id;
+            _selectedTopicName = _topics.FirstOrDefault(t => t.Id == id)?.Name;
+            _mentors = await Bookings.GetMentorsForTopicAsync(id);
+
+            // Auto-assign the most available mentor, but allow changing.
+            var auto = _mentors.FirstOrDefault();
+            if (auto is not null)
+            {
+                await SelectMentor(auto.Id);
+            }
+        }
+        else
+        {
+            _topicId = null;
+            _mentors.Clear();
+        }
+    }
+
+    private async Task SelectMentor(int mentorId)
+    {
+        _mentorId = mentorId;
+        _selectedMentorName = _mentors.FirstOrDefault(m => m.Id == mentorId)?.DisplayName;
+        _selectedStartUtc = null;
+        _refDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        await LoadSlots();
+    }
+
+    private async Task LoadSlots()
+    {
+        if (_mentorId is null) return;
+
+        // Use the calendar's current range.
+        var start = _view == CalendarViewMode.Daily ? _refDate : StartOfWeek(_refDate);
+        var end = _view == CalendarViewMode.Daily ? _refDate : StartOfWeek(_refDate).AddDays(6);
+
+        _slots = await Availability.GetSlotsAsync(_mentorId.Value, start, end);
+        _entries = _slots.Select(s => new CalendarEntry
+        {
+            StartUtc = s.StartUtc,
+            EndUtc = s.EndUtc,
+            State = s.IsTaken ? "taken" : "free"
+        }).ToList();
+    }
+
+    private void SelectSlot(DateTime startUtc)
+    {
+        _selectedStartUtc = startUtc;
+        _error = null;
+    }
+
+    private async Task Submit()
+    {
+        if (_mentorId is null || _topicId is null || _selectedStartUtc is null) return;
+
+        _submitting = true;
+        _error = null;
+
+        var result = await Bookings.CreateBookingAsync(
+            _mentorId.Value, _topicId.Value, _selectedStartUtc.Value,
+            _form.Name, _form.Email, _form.Message);
+
+        _submitting = false;
+
+        if (!result.Success)
+        {
+            _error = result.Error;
+            await LoadSlots();
+            _selectedStartUtc = null;
+            return;
+        }
+
+        _confirmation = await Db.Bookings
+            .Include(b => b.Mentor)
+            .Include(b => b.Topic)
+            .FirstAsync(b => b.Id == result.Booking!.Id);
+        _confirmationEmailBody = result.EmailBody;
+    }
+
+    private void Reset()
+    {
+        _confirmation = null;
+        _confirmationEmailBody = null;
+        _topicId = null;
+        _mentorId = null;
+        _selectedStartUtc = null;
+        _mentors.Clear();
+        _slots.Clear();
+        _entries.Clear();
+        if (!_lockIdentity)
+        {
+            _form.Name = _form.Email = string.Empty;
+        }
+        _form.Message = string.Empty;
+    }
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        int diff = ((int)date.DayOfWeek - (int)DayOfWeek.Sunday + 7) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private class BookingForm
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(150)]
+        public string Name { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(2000, MinimumLength = 5)]
+        public string Message { get; set; } = string.Empty;
+    }
+}
